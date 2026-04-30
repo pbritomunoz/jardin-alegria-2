@@ -1,16 +1,16 @@
 export interface Plant {
   id: string;
   nombre: string;
-  tipo: 'Interior' | 'Exterior' | 'Suculenta' | 'Colgante';
+  tipo: string;
   precio: number;
   imagen?: string;
   stock: boolean;
   nuevo: boolean;
   descripcion: string;
   cuidados: string[];
-  dificultad: 'Fácil' | 'Media' | 'Avanzada';
-  luz: 'Baja' | 'Media' | 'Indirecta' | 'Directa';
-  riego: 'Poco' | 'Moderado' | 'Frecuente';
+  luz?: string;
+  riego?: string;
+  dificultad?: string;
 }
 
 export interface CartItem {

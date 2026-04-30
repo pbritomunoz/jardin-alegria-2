@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShoppingBag, 
@@ -18,13 +18,61 @@ import {
   Droplet, 
   Sun,
   ChevronRight,
-  Info
+  Info,
+  Loader2
 } from 'lucide-react';
-import { PLANTS, THEMES } from './constants';
+import { CSV_URL, THEMES } from './constants';
 import { Plant, CartItem, ThemeType } from './types';
+
+// Helper function to parse CSV from Google Sheets
+const parseCSV = (text: string): Plant[] => {
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\r/g, ''));
+  
+  return lines.slice(1).map((line, index) => {
+    const values: string[] = [];
+    let insideQuotes = false;
+    let current = '';
+    
+    for (const char of line) {
+      if (char === '"') insideQuotes = !insideQuotes;
+      else if (char === ',' && !insideQuotes) {
+        values.push(current.trim().replace(/\r/g, ''));
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim().replace(/\r/g, ''));
+    
+    const row: any = {};
+    headers.forEach((header, i) => {
+      row[header] = values[i] || '';
+    });
+    
+    // Map CSV fields to Plant interface
+    return {
+      id: index.toString(),
+      nombre: row.nombre || 'Planta sin nombre',
+      tipo: row.tipo || 'General',
+      precio: parseInt(row.precio) || 0,
+      imagen: row.imagen || '',
+      stock: (row.stock || '').toLowerCase().startsWith('s'),
+      nuevo: (row.nuevo || '').toLowerCase().startsWith('s'),
+      descripcion: row.descripcion || 'Sin descripción disponible.',
+      cuidados: [row.cuidado1, row.cuidado2].filter(Boolean),
+      luz: row.luz || 'Indirecta',
+      riego: row.riego || 'Moderado',
+      dificultad: row.dificultad || 'Fácil'
+    };
+  }).filter(p => p.nombre !== 'Planta sin nombre');
+};
 
 export default function App() {
   // State
+  const [plants, setPlants] = useState<Plant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeType>('morning');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -34,12 +82,37 @@ export default function App() {
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null);
 
   // Derived
+  // Data Fetching
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(CSV_URL);
+        if (!response.ok) throw new Error('No se pudo conectar con la base de datos');
+        const text = await response.text();
+        const parsedData = parseCSV(text);
+        setPlants(parsedData);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Error al cargar el catálogo');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
   const activeTheme = THEMES[theme];
   
   const filteredPlants = useMemo(() => {
-    if (filter === 'todos') return PLANTS;
-    return PLANTS.filter(p => p.tipo.toLowerCase() === filter.toLowerCase());
-  }, [filter]);
+    if (filter === 'todos') return plants;
+    return plants.filter(p => p.tipo.toLowerCase() === filter.toLowerCase());
+  }, [filter, plants]);
+
+  const categories = useMemo(() => {
+    const types = Array.from(new Set(plants.map(p => p.tipo)));
+    return ['todos', ...types];
+  }, [plants]);
 
   const cartTotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + (item.planta.precio * item.cantidad), 0);
@@ -179,7 +252,7 @@ export default function App() {
           <div>
             <h2 className="text-4xl font-serif font-light mb-4 text-balance">Nuestra Colección</h2>
             <div className="flex flex-wrap gap-2">
-              {['Todos', 'Interior', 'Exterior', 'Suculenta', 'Colgante'].map((f) => (
+              {categories.map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f.toLowerCase())}
@@ -212,73 +285,101 @@ export default function App() {
         </div>
 
         {/* Plants Grid/List */}
-        <motion.div 
-          layout
-          className={viewMode === 'grid' 
-            ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8" 
-            : "flex flex-col gap-4"
-          }
-        >
-          <AnimatePresence mode='popLayout'>
-            {filteredPlants.map((plant) => (
-              <motion.div
-                key={plant.id}
-                layout
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                whileHover={{ y: -5 }}
-                className={`group relative ${viewMode === 'grid' ? 'p-4 rounded-[32px]' : 'flex items-center gap-6 p-4 rounded-2xl'} ${activeTheme.card} border border-white/5 hover:border-white/20 transition-all duration-300`}
-              >
-                <div className={`relative overflow-hidden cursor-pointer ${viewMode === 'grid' ? 'aspect-square rounded-[24px]' : 'w-32 h-32 rounded-xl flex-shrink-0'}`}
-                  onClick={() => setSelectedPlant(plant)}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 opacity-40">
+            <Loader2 className="animate-spin mb-4" size={40} />
+            <p className="text-sm font-medium uppercase tracking-widest">Sincronizando invernadero...</p>
+          </div>
+        ) : error ? (
+          <div className="bg-red-500/10 border border-red-500/20 p-8 rounded-3xl text-center">
+            <p className="text-red-500 font-medium mb-2">Error de Sincronización</p>
+            <p className="text-sm opacity-60">{error}</p>
+          </div>
+        ) : (
+          <motion.div 
+            layout
+            className={viewMode === 'grid' 
+              ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8" 
+              : "flex flex-col gap-4"
+            }
+          >
+            <AnimatePresence mode='popLayout'>
+              {filteredPlants.map((plant) => (
+                <motion.div
+                  key={plant.id}
+                  layout
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  whileHover={{ y: -5 }}
+                  className={`group relative ${viewMode === 'grid' ? 'p-4 rounded-[32px]' : 'flex items-center gap-6 p-4 rounded-2xl'} ${activeTheme.card} border border-white/5 hover:border-white/20 transition-all duration-300`}
                 >
-                  <img 
-                    src={plant.imagen} 
-                    alt={plant.nombre} 
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                  />
-                  {plant.nuevo && (
-                    <span className="absolute top-4 left-4 px-3 py-1 bg-white text-black text-[10px] font-bold uppercase tracking-widest rounded-full shadow-lg">New</span>
-                  )}
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none"></div>
-                </div>
-
-                <div className={`mt-6 ${viewMode === 'list' ? 'mt-0 flex-1' : ''}`}>
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <p className={`text-[10px] font-bold uppercase tracking-widest opacity-50 mb-1 ${activeTheme.accent}`}>{plant.tipo}</p>
-                      <h3 className="font-serif text-xl">{plant.nombre}</h3>
-                    </div>
-                    <span className="text-xl font-medium">${plant.precio.toLocaleString('es-CL')}</span>
+                  <div className={`relative overflow-hidden cursor-pointer ${viewMode === 'grid' ? 'aspect-square rounded-[24px]' : 'w-32 h-32 rounded-xl flex-shrink-0'}`}
+                    onClick={() => setSelectedPlant(plant)}
+                  >
+                    {plant.imagen ? (
+                       <img 
+                       src={plant.imagen} 
+                       alt={plant.nombre} 
+                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                     />
+                    ) : (
+                      <div className="w-full h-full bg-black/5 flex items-center justify-center text-6xl">
+                        🪴
+                      </div>
+                    )}
+                    {plant.nuevo && (
+                      <span className="absolute top-4 left-4 px-3 py-1 bg-white text-black text-[10px] font-bold uppercase tracking-widest rounded-full shadow-lg">New</span>
+                    )}
+                    {!plant.stock && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <span className="px-4 py-2 bg-white text-black text-xs font-bold uppercase tracking-widest rounded-full">Agotado</span>
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none"></div>
                   </div>
-                  
-                  {viewMode === 'list' && (
-                    <p className={`text-sm mt-1 mb-4 opacity-70 ${activeTheme.mute}`}>{plant.descripcion}</p>
-                  )}
 
-                  <div className="flex items-center justify-between mt-4">
-                    <div className="flex gap-2">
-                      <div className="flex items-center gap-1 opacity-60 text-[10px] border border-current px-2 py-0.5 rounded-full uppercase tracking-tighter">
-                        <Sun size={10} /> {plant.luz}
+                  <div className={`mt-6 ${viewMode === 'list' ? 'mt-0 flex-1' : ''}`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <p className={`text-[10px] font-bold uppercase tracking-widest opacity-50 mb-1 ${activeTheme.accent}`}>{plant.tipo}</p>
+                        <h3 className="font-serif text-xl">{plant.nombre}</h3>
                       </div>
-                      <div className="flex items-center gap-1 opacity-60 text-[10px] border border-current px-2 py-0.5 rounded-full uppercase tracking-tighter">
-                        <Droplet size={10} /> {plant.riego}
-                      </div>
+                      <span className="text-xl font-medium">${plant.precio.toLocaleString('es-CL')}</span>
                     </div>
                     
-                    <button 
-                      onClick={() => addToCart(plant)}
-                      className="p-3 bg-black/5 hover:bg-green-900 hover:text-white rounded-full transition-all duration-300 active:scale-90"
-                    >
-                      <Plus size={20} />
-                    </button>
+                    {viewMode === 'list' && (
+                      <p className={`text-sm mt-1 mb-4 opacity-70 ${activeTheme.mute}`}>{plant.descripcion}</p>
+                    )}
+
+                    <div className="flex items-center justify-between mt-4">
+                      <div className="flex gap-2">
+                        {plant.luz && (
+                          <div className="flex items-center gap-1 opacity-60 text-[10px] border border-current px-2 py-0.5 rounded-full uppercase tracking-tighter">
+                            <Sun size={10} /> {plant.luz}
+                          </div>
+                        )}
+                        {plant.riego && (
+                          <div className="flex items-center gap-1 opacity-60 text-[10px] border border-current px-2 py-0.5 rounded-full uppercase tracking-tighter">
+                            <Droplet size={10} /> {plant.riego}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <button 
+                        onClick={() => addToCart(plant)}
+                        disabled={!plant.stock}
+                        className={`p-3 transition-all duration-300 active:scale-90 rounded-full ${!plant.stock ? 'opacity-20 cursor-not-allowed' : 'bg-black/5 hover:bg-green-900 hover:text-white'}`}
+                      >
+                        <Plus size={20} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </motion.div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        )}
       </section>
 
       {/* Cart Drawer */}
