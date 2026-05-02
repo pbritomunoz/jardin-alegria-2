@@ -21,8 +21,13 @@ import {
   Info,
   Loader2
 } from 'lucide-react';
-import { CSV_URL, THEMES } from './constants';
-import { Plant, CartItem, ThemeType } from './types';
+import { auth, db } from './lib/firebase';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import AuthModal from './components/AuthModal';
+import AdminConsole from './components/AdminConsole';
+import { CSV_URL, THEMES, WHATSAPP_NUMBER, SHOP_ADDRESS } from './constants';
+import { Plant, CartItem, ThemeType, UserProfile } from './types';
 
 // Helper function to parse CSV from Google Sheets
 const parseCSV = (text: string): Plant[] => {
@@ -78,8 +83,31 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [filter, setFilter] = useState<string>('todos');
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null);
+
+  // Auth State
+  const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
+  // Auth listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        const docRef = doc(db, 'users', currentUser.uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setUserProfile(docSnap.data() as UserProfile);
+        }
+      } else {
+        setUserProfile(null);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Derived
   // Data Fetching
@@ -174,6 +202,31 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4">
+          {user?.email === 'pbritomunoz@gmail.com' && (
+            <button 
+              onClick={() => setIsAdminConsoleOpen(true)}
+              className="hidden sm:flex items-center gap-2 px-3 py-2 bg-green-900/10 text-green-900 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-green-900/20 transition-all border border-green-900/20"
+            >
+              <Settings size={14} /> Admin
+            </button>
+          )}
+
+          {user ? (
+            <button 
+              onClick={() => signOut(auth)}
+              className="text-xs font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity"
+            >
+              Hola, {userProfile?.nombre || 'Botánico'} (Salir)
+            </button>
+          ) : (
+            <button 
+              onClick={() => setIsAuthOpen(true)}
+              className="text-xs font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity"
+            >
+              Ingresar
+            </button>
+          )}
+
           <button 
             onClick={() => setIsSettingsOpen(true)}
             className="p-2 hover:bg-white/10 rounded-full transition-colors"
@@ -454,8 +507,17 @@ export default function App() {
                     <span className="text-xl font-serif">Total</span>
                     <span className="text-2xl font-serif">${cartTotal.toLocaleString('es-CL')}</span>
                   </div>
-                  <button className="w-full py-4 bg-green-950 text-white rounded-full font-bold shadow-xl shadow-green-900/20 hover:bg-green-900 transition-all scale-100 active:scale-95">
-                    Finalizar Compra
+                  <button 
+                    onClick={() => {
+                      const lines = cart.map(i => 
+                        `• ${i.planta.nombre} x${i.cantidad} = $${(i.planta.precio * i.cantidad).toLocaleString('es-CL')}`
+                      ).join(' ');
+                      const msg = `Hola! Quisiera hacer el siguiente pedido: ${lines} *Total: $${cartTotal.toLocaleString('es-CL')}* ¿Pueden confirmar disponibilidad y coordinar entrega?`;
+                      window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(msg)}`, '_blank');
+                    }}
+                    className="w-full py-4 bg-green-950 text-white rounded-full font-bold shadow-xl shadow-green-900/20 hover:bg-green-900 transition-all scale-100 active:scale-95"
+                  >
+                    Finalizar Pedido via WhatsApp
                   </button>
                 </div>
               )}
@@ -677,21 +739,18 @@ export default function App() {
               Creemos que cada espacio merece un poco de naturaleza salvaje. Nuestra misión es conectar personas con sus compañeros verdes perfectos.
             </p>
             <div className="flex gap-4">
-              {['Instagram', 'Pinterest', 'Email'].map(s => (
-                <a key={s} href="#" className="text-[10px] font-bold uppercase tracking-widest hover:opacity-100 opacity-40 transition-opacity">
-                  {s}
-                </a>
-              ))}
+              <a href={`https://wa.me/${WHATSAPP_NUMBER}`} className="text-[10px] font-bold uppercase tracking-widest hover:opacity-100 opacity-40 transition-opacity">WhatsApp</a>
+              <a href="#" className="text-[10px] font-bold uppercase tracking-widest hover:opacity-100 opacity-40 transition-opacity">Instagram</a>
+              <a href="#" className="text-[10px] font-bold uppercase tracking-widest hover:opacity-100 opacity-40 transition-opacity">Email</a>
             </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-12">
             <div>
-              <h5 className="text-[10px] font-bold uppercase tracking-widest mb-6 opacity-30">Explorar</h5>
+              <h5 className="text-[10px] font-bold uppercase tracking-widest mb-6 opacity-30">Contacto</h5>
               <ul className="space-y-3 text-sm opacity-60">
-                <li><a href="#" className="hover:opacity-100 transition-opacity">Plantas de Interior</a></li>
-                <li><a href="#" className="hover:opacity-100 transition-opacity">Maceteros de Diseño</a></li>
-                <li><a href="#" className="hover:opacity-100 transition-opacity">Cuidado Botánico</a></li>
+                <li>{SHOP_ADDRESS}</li>
+                <li>Tel: +{WHATSAPP_NUMBER}</li>
               </ul>
             </div>
             <div>
@@ -721,6 +780,17 @@ export default function App() {
           <span>© 2026 JARDÍN ALEGRÍA STUDIO</span>
           <span>BORN IN SANTIAGO</span>
         </div>
+        <AuthModal 
+          isOpen={isAuthOpen} 
+          onClose={() => setIsAuthOpen(false)} 
+          activeTheme={activeTheme} 
+        />
+        <AdminConsole 
+          isOpen={isAdminConsoleOpen} 
+          onClose={() => setIsAdminConsoleOpen(false)} 
+          activeTheme={activeTheme} 
+          isAdmin={user?.email === 'pbritomunoz@gmail.com'}
+        />
       </footer>
     </div>
   );

@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == "pbritomunoz@gmail.com" && request.auth.token.email_verified == true;
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'nombre', 'apellido', 'email', 'telefono']) &&
+             data.uid is string &&
+             data.nombre is string && data.nombre.size() <= 100 &&
+             data.apellido is string && data.apellido.size() <= 100 &&
+             data.email is string && data.email.size() <= 150 &&
+             data.telefono is string && data.telefono.size() <= 20;
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow list: if isAdmin();
+      allow get: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      allow update: if isOwner(userId) && isValidUserProfile(request.resource.data) &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre', 'apellido', 'telefono', 'direccion']);
+    }
+  }
+}

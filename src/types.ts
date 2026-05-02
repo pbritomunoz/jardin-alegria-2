@@ -24,3 +24,12 @@ export interface AppConfig {
   theme: ThemeType;
   viewMode: 'grid' | 'list';
 }
+
+export interface UserProfile {
+  uid: string;
+  nombre: string;
+  apellido: string;
+  email: string;
+  telefono: string;
+  direccion?: string;
+}

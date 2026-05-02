@@ -2,6 +2,9 @@ import { ThemeType } from './types';
 
 export const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ-y6LfkWCRBH8wM0XRLjQD0w_svKUnAOX0gLi3t_ltsfgcaiVLCcALaq35_SaQMkS3XnuoPSTw2BGc/pub?gid=0&single=true&output=csv';
 
+export const WHATSAPP_NUMBER = '56976593987';
+export const SHOP_ADDRESS = 'Gorki 401 Quillota, Region Valparaiso, Chile';
+
 export const THEMES: Record<ThemeType, { bg: string, text: string, accent: string, card: string, mute: string }> = {
   morning: {
     bg: 'bg-[#FAF8F3]',
